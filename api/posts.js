@@ -1,7 +1,7 @@
 const express = require('express');
 const postsRouter = express.Router();
 const { requireUser } = require('./utils');
-const { getAllPosts, createPost, updatePost, getPostById } = require('../db');
+const { getAllPosts, createPost, getPostById, updatePost } = require('../db');
 
 postsRouter.use((req, res, next) => {
     console.log("A request is being made to /posts");
@@ -10,13 +10,31 @@ postsRouter.use((req, res, next) => {
 });
 
 
-postsRouter.get('/', async (req, res) => {
-    const posts = await getAllPosts();
+postsRouter.get('/', async (req, res, next) => {
+  try {
+    const allPosts = await getAllPosts();
 
+      const posts = allPosts.filter(post => {
+        // the post is active, doesn't matter who it belongs to
+        if (post.active) {
+          return true;
+        }
+      
+        // the post is not active, but it belogs to the current user
+        if (req.user && post.author.id === req.user.id) {
+          return true;
+        }
+      
+        // none of the above are true
+        return false;
+      });
 
     res.send({
-        posts
+      posts
     });
+  } catch ({ name, message }) {
+    next({ name, message });
+  }
 });
 
 postsRouter.post('/', requireUser, async (req, res, next) => {
@@ -87,8 +105,31 @@ postsRouter.patch('/:postId', requireUser, async (req, res, next) => {
     }
   });
 
+  postsRouter.delete('/:postId', requireUser, async (req, res, next) => {
+    try {
+      const post = await getPostById(req.params.postId);
+  
+      if (post && post.author.id === req.user.id) {
+        const updatedPost = await updatePost(post.id, { active: false });
+  
+        res.send({ post: updatedPost });
+      } else {
+        
+        next(post ? { 
+          name: "UnauthorizedUserError",
+          message: "You cannot delete a post which is not yours"
+        } : {
+          name: "PostNotFoundError",
+          message: "That post does not exist"
+        });
+      }
+  
+    } catch ({ name, message }) {
+      next({ name, message })
+    }
+  });
+
 module.exports = postsRouter;
 
 
-
-// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJhbGJlcnQiLCJwYXNzd29yZCI6ImJlcnRpZTk5IiwibmFtZSI6Ik5ld25hbWUgU29nb29kIiwibG9jYXRpb24iOiJMZXN0ZXJ2aWxsZSwgS1kiLCJhY3RpdmUiOnRydWUsImlhdCI6MTY4MjU3MTk5NCwiZXhwIjoxNjgzMTc2Nzk0fQ.94fF_KFr3J-DEaylu9J9I4dKSUF1q0PglSKVtnW4gh8
+// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJhbGJlcnQiLCJwYXNzd29yZCI6ImJlcnRpZTk5IiwibmFtZSI6Ik5ld25hbWUgU29nb29kIiwibG9jYXRpb24iOiJMZXN0ZXJ2aWxsZSwgS1kiLCJhY3RpdmUiOnRydWUsImlhdCI6MTY4MjU4OTEwMiwiZXhwIjoxNjgzMTkzOTAyfQ.mcHy7wLIoCTKKkCdzxzB2O-U3qoGxRRg-4QtkQpdza4
